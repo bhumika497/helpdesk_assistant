@@ -14,7 +14,7 @@ class DocumentModel(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     content = Column(Text, nullable=False)
-    metadata_info = Column(String, nullable=True) # e.g., 'Engineering Runbook' or 'HR'
+    metadata_info = Column(String, nullable=True) 
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 class QueryLogModel(Base):
@@ -23,9 +23,9 @@ class QueryLogModel(Base):
     id = Column(Integer, primary_key=True, index=True)
     input_query = Column(String, nullable=False)
     output_response = Column(Text, nullable=False)
-    tools_used = Column(String, nullable=True)     # Saved as a simple comma-separated string
-    routing_decision = Column(String, nullable=False) # e.g., 'RAG', 'DATABASE', 'TOOL'
-    latency_ms = Column(Integer, nullable=True)     # To monitor speed/performance
+    tools_used = Column(String, nullable=True)     
+    routing_decision = Column(String, nullable=False) 
+    latency_ms = Column(Integer, nullable=True)    
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
 
 def init_db():

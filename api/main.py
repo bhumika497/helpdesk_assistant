@@ -1,8 +1,10 @@
 import time
-from fastapi import FastAPI, Depends
+import io
+from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
+from pypdf import PdfReader
 
 from db.session import init_db, SessionLocal, QueryLogModel, DocumentModel
 from core.agent.router import route_query
@@ -20,23 +22,74 @@ def get_db():
 class QueryInput(BaseModel):
     query: str
 
-class DocumentInput(BaseModel):
-    content: str
-    metadata_info: str = "General Docs"
-
 class EvalInput(BaseModel):
     queries: List[str]
 
 @app.post("/ingest")
-def ingest_document(doc: DocumentInput, db: Session = Depends(get_db)):
-    new_doc = DocumentModel(content=doc.content, metadata_info=doc.metadata_info)
+async def ingest_document(
+    metadata_info: str = Form("General Docs"),
+    content: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Ingests documentation via raw text or by uploading a document (PDF or TXT).
+    """
+    extracted_text = ""
+
+    if file:
+        filename = file.filename.lower()
+        file_bytes = await file.read()
+        
+        if filename.endswith(".pdf"):
+            try:
+                pdf_stream = io.BytesIO(file_bytes)
+                reader = PdfReader(pdf_stream)
+                pages_text = []
+                
+                for page in reader.pages:
+                    page_content = page.extract_text()
+                    if page_content:
+                        pages_text.append(page_content.strip())
+                
+                extracted_text = "\n".join(pages_text)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to parse PDF: {str(e)}")
+                
+        elif filename.endswith(".txt"):
+            try:
+                extracted_text = file_bytes.decode("utf-8")
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to decode text file: {str(e)}")
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format. Please upload a .pdf or .txt file.")
+
+    elif content:
+        extracted_text = content
+        
+    else:
+        raise HTTPException(
+            status_code=400, 
+            detail="You must provide either a 'content' text string or upload a 'file'."
+        )
+
+    if not extracted_text.strip():
+        raise HTTPException(status_code=400, detail="Extracted document content is empty.")
+
+    new_doc = DocumentModel(content=extracted_text, metadata_info=metadata_info)
     db.add(new_doc)
     db.commit()
-    return {"status": "Success", "message": "Document ingested into database successfully."}
+
+    return {
+        "status": "Success", 
+        "message": "Document ingested into database successfully.",
+        "character_count": len(extracted_text)
+    }
+
 
 @app.post("/query")
 def process_query(user_input: QueryInput, db: Session = Depends(get_db)):
-    start_time = time.time()  # Start our latency stopwatch
+    start_time = time.time()
 
     agent_result = route_query(user_input.query)
 
